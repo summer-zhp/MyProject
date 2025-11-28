@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>张华鹏 - 宇宙星云动画</title>
+  <style>
+    /* --- 样式重置与布局 --- */
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #050505;
+      /* 深空黑 */
+      font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    /* --- 开场按钮覆盖层 --- */
+    #overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+      transition: opacity 1s ease;
+      backdrop-filter: blur(5px);
+    }
+
+    #start-btn {
+      padding: 15px 40px;
+      font-size: 20px;
+      color: #00f260;
+      background: transparent;
+      border: 2px solid #00f260;
+      border-radius: 30px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      transition: all 0.3s;
+      box-shadow: 0 0 15px rgba(0, 242, 96, 0.2);
+    }
+
+    #start-btn:hover {
+      background: #00f260;
+      color: #000;
+      box-shadow: 0 0 30px rgba(0, 242, 96, 0.6);
+    }
+
+    .tips {
+      margin-top: 20px;
+      color: #888;
+      font-size: 12px;
+    }
+
+    /* 隐藏的音频标签 */
+    audio {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <audio id="bgm" loop>
+    <source src="https://music.163.com/song/media/outer/url?id=1387581250.mp3" type="audio/mpeg">
+    您的浏览器不支持音频元素。
+  </audio>
+
+  <div id="overlay">
+    <button id="start-btn">ENTER WORLD</button>
+    <div class="tips">戴上耳机 · 体验最佳效果</div>
+  </div>
+
+  <canvas id="scene"></canvas>
+
+  <script>
+    /**
+     * --- 配置区域 ---
+     */
+    const content = [
+      "欢迎来到我的世界",
+      "大家好！我是张华鹏",
+      "一名再也普通不过\n的前端开发工程师",
+      "很荣幸能在我的世界\n与你相识",
+      "这里现在是我们的世界",
+      "让我们探索宇宙深处 ..." // 结尾过渡语改为宇宙主题
+    ];
+
+    const config = {
+      particleGap: 6,
+      particleSize: 2.5,
+      mouseRadius: 100,
+      textDisplayTime: 4000,
+      friction: 0.8,
+      ease: 0.08,
+
+      bgParticleCount: 200,  // 增加背景粒子数量，让宇宙更密集
+      lineDistance: 200,     // 增加连线距离，模拟星系间更远的连接
+      lineFrequency: 1
+    };
+
+    /**
+     * --- 系统变量 ---
+     */
+    const canvas = document.getElementById('scene');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('start-btn');
+    const bgm = document.getElementById('bgm');
+
+    let width, height;
+    let centerX, centerY;
+    let particles = [];
+    let bgParticles = [];
+    let mouse = { x: undefined, y: undefined };
+    let currentIndex = 0;
+    let isEnding = false;
+    let frameCount = 0;
+    let animationId;
+
+    // 检测移动端并调整配置
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile) {
+      config.particleGap = 8;
+      config.particleSize = 3.0;
+      config.bgParticleCount = 100; // 移动端粒子少一些
+      config.lineDistance = 120;
+      config.mouseRadius = 60;
+      config.lineFrequency = 2;
+    }
+
+    /**
+     * --- 粒子类定义 ---
+     */
+
+    // 1. 文字构成粒子 (Particle) - 保持不变
+    class Particle {
+      constructor(x, y) {
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        this.targetX = x;
+        this.targetY = y;
+        this.vx = (Math.random() - 0.5) * 4;
+        this.vy = (Math.random() - 0.5) * 4;
+        this.size = Math.random() * config.particleSize + 1.5;
+        this.baseHue = (x / width) * 60 + 160;
+        this.alpha = 1;
+      }
+
+      update() {
+        if (isEnding) {
+          const dx = this.x - centerX;
+          const dy = this.y - centerY;
+
+          this.vx += Math.cos(Math.atan2(dy, dx)) * 0.5 * (Math.random() + 0.5);
+          this.vy += Math.sin(Math.atan2(dy, dx)) * 0.5 * (Math.random() + 0.5);
+
+          this.vx *= 0.95;
+          this.vy *= 0.95;
+
+          this.x += this.vx * 2;
+          this.y += this.vy * 2;
+          this.alpha -= 0.015;
+
+          return this.alpha > 0;
+        }
+
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        let forceX = 0, forceY = 0;
+
+        if (distance < config.mouseRadius && mouse.x !== undefined) {
+          const angle = Math.atan2(dy, dx);
+          const force = (config.mouseRadius - distance) / config.mouseRadius;
+          const repulsion = force * 20;
+          forceX = -Math.cos(angle) * repulsion;
+          forceY = -Math.sin(angle) * repulsion;
+        }
+
+        const targetDx = this.targetX - this.x;
+        const targetDy = this.targetY - this.y;
+
+        this.vx += (targetDx * config.ease + forceX) * 0.5;
+        this.vy += (targetDy * config.ease + forceY) * 0.5;
+
+        this.vx *= config.friction;
+        this.vy *= config.friction;
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        this.x += (Math.random() - 0.5) * 0.1;
+        this.y += (Math.random() - 0.5) * 0.1;
+
+        return true;
+      }
+
+      draw() {
+        if (this.alpha <= 0) return;
+        const speed = Math.abs(this.vx) + Math.abs(this.vy);
+        const lightness = 80 + speed * 2;
+        const hue = this.baseHue + speed * 10;
+
+        ctx.fillStyle = `hsla(${hue}, 90%, ${Math.min(lightness, 100)}%, ${this.alpha})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // 2. 背景氛围粒子 (BgParticle) - 宇宙效果的实现核心
+    class BgParticle {
+      constructor() {
+        this.reset();
+        // 更广的颜色范围，模拟星云和星体的多样性
+        this.colorHue = Math.random() * 360;
+        this.colorSaturation = Math.random() * 50 + 50; // 饱和度也随机
+        this.colorLightness = Math.random() * 50 + 30; // 亮度更低更深邃，但有更亮的“星辰”
+
+        // 粒子尺寸随机性更大，模拟远近星体
+        this.initialSize = Math.random() * 2 + 0.5;
+      }
+
+      reset() {
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        this.size = this.initialSize;
+        // 缓慢随机漂移的速度
+        this.vx = (Math.random() - 0.5) * 0.3;
+        this.vy = (Math.random() - 0.5) * 0.3;
+        this.opacity = Math.random() * 0.3 + 0.1; // 初始透明度更低
+        this.trailOpacity = 1; // 用于拖影效果
+      }
+
+      update() {
+        // 边界循环：粒子移出画布后从另一侧进入，模拟无限宇宙
+        if (this.x < 0) this.x = width;
+        if (this.x > width) this.x = 0;
+        if (this.y < 0) this.y = height;
+        if (this.y > height) this.y = 0;
+
+        // 鼠标斥力 (文字阶段和结尾阶段都保留，增加交互性)
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < config.mouseRadius * 1.5 && mouse.x !== undefined) {
+          const angle = Math.atan2(dy, dx);
+          const force = (config.mouseRadius * 1.5 - distance) / (config.mouseRadius * 1.5);
+          const repulsion = force * 0.5;
+          this.vx -= Math.cos(angle) * repulsion;
+          this.vy -= Math.sin(angle) * repulsion;
+        }
+
+        // 【☆☆☆ 宇宙效果：星尘漂移与微弱引力/斥力 ☆☆☆】
+        if (isEnding) {
+          // 模拟粒子间的微弱引力/斥力，使其自然聚散，形成星云结构
+          // 遍历所有背景粒子，计算相互作用，但为了性能，只计算附近的
+          for (let i = 0; i < bgParticles.length; i++) {
+            const otherParticle = bgParticles[i];
+            if (otherParticle === this) continue;
+
+            const pDx = otherParticle.x - this.x;
+            const pDy = otherParticle.y - this.y;
+            const pDistSq = pDx * pDx + pDy * pDy; // 距离平方
+            const pDist = Math.sqrt(pDistSq);
+
+            if (pDist < config.lineDistance * 0.8 && pDist > 0) { // 只考虑较近的粒子
+              const force = (1 / pDistSq) * 5; // 模拟引力，强度为5，平方反比
+              this.vx += (pDx / pDist) * force * 0.0005; // 强度再次削弱
+              this.vy += (pDy / pDist) * force * 0.0005;
+            }
+          }
+
+          // 引入一个随时间变化的微弱随机扰动，模拟星云的混沌
+          this.vx += (Math.random() - 0.5) * 0.02;
+          this.vy += (Math.random() - 0.5) * 0.02;
+        }
+
+
+        this.vx *= 0.99; // 轻微衰减
+        this.vy *= 0.99;
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // 模拟粒子闪烁和拖尾衰减
+        this.trailOpacity = Math.max(0, this.trailOpacity - 0.005);
+        this.size = this.initialSize * (1 + Math.sin(frameCount * 0.05 + this.x) * 0.2); // 微弱闪烁
+      }
+
+      draw() {
+        // 粒子颜色：H S L，L 动态调整模拟闪烁
+        const currentLightness = this.colorLightness + Math.sin(frameCount * 0.05 + this.x) * 10;
+        ctx.fillStyle = `hsla(${this.colorHue}, ${this.colorSaturation}%, ${Math.min(currentLightness, 90)}%, ${this.opacity})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    /**
+     * --- 核心逻辑 ---
+     */
+
+    function init() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+      centerX = width / 2;
+      centerY = height / 2;
+
+      bgParticles = [];
+      for (let i = 0; i < config.bgParticleCount; i++) {
+        bgParticles.push(new BgParticle());
+      }
+    }
+
+    // 文本粒子生成逻辑 (保持不变)
+    function createTextParticles(text) {
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCanvas.width = width;
+      tempCanvas.height = height;
+
+      const fontSize = isMobile ? width / 7 : width / 12;
+      tempCtx.font = `bold ${fontSize}px "Helvetica Neue", sans-serif`;
+      tempCtx.fillStyle = 'white';
+      tempCtx.textAlign = 'center';
+      tempCtx.textBaseline = 'middle';
+
+      const lines = text.split('\n');
+      const lineHeight = fontSize * 1.3;
+      const totalHeight = lines.length * lineHeight;
+      const startY = (height - totalHeight) / 2 + lineHeight / 2;
+
+      lines.forEach((line, index) => {
+        tempCtx.fillText(line, width / 2, startY + index * lineHeight);
+      });
+
+      const imageData = tempCtx.getImageData(0, 0, width, height).data;
+      const newTargets = [];
+
+      for (let y = 0; y < height; y += config.particleGap) {
+        for (let x = 0; x < width; x += config.particleGap) {
+          const index = (y * width + x) * 4;
+          if (imageData[index + 3] > 128) {
+            newTargets.push({ x, y });
+          }
+        }
+      }
+
+      const targetCount = newTargets.length;
+      const currentCount = particles.length;
+
+      if (currentCount < targetCount) {
+        for (let i = currentCount; i < targetCount; i++) {
+          particles.push(new Particle(width / 2, height / 2));
+        }
+      }
+
+      if (currentCount > targetCount) {
+        particles.splice(targetCount);
+      }
+
+      for (let i = 0; i < particles.length; i++) {
+        particles[i].targetX = newTargets[i].x;
+        particles[i].targetY = newTargets[i].y;
+        particles[i].baseHue = (newTargets[i].x / width) * 60 + 160;
+        particles[i].alpha = 1;
+      }
+    }
+
+    // 绘制粒子连线
+    function drawLines() {
+      const currentLineFrequency = isEnding ? 1 : config.lineFrequency;
+      if (frameCount % currentLineFrequency !== 0) return;
+
+      // 连线透明度：结尾模式下增强，但保持深邃感，不至于太亮
+      const lineAlphaFactor = isEnding ? 0.3 : 0.05;
+
+      const lineWidth = isEnding ? 0.8 : 0.5; // 连线宽度适中
+
+      const particlesToConnect = bgParticles;
+
+      for (let i = 0; i < particlesToConnect.length; i++) {
+        const p1 = particlesToConnect[i];
+
+        for (let j = i + 1; j < particlesToConnect.length; j++) {
+          const p2 = particlesToConnect[j];
+
+          const dx = p1.x - p2.x;
+          const dy = p1.y - p2.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance < config.lineDistance) {
+            let alpha = 1 - distance / config.lineDistance;
+
+            alpha *= lineAlphaFactor;
+
+            ctx.strokeStyle = `rgba(0, 242, 96, ${alpha})`;
+            ctx.lineWidth = lineWidth;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    function animate() {
+      frameCount++;
+
+      // 【☆☆☆ 背景拖影：模拟深邃宇宙效果 ☆☆☆】
+      // 更低的背景透明度，让粒子拖影更长，形成星云/星轨效果
+      const fadeFactor = isEnding ? 0.05 : 0.15; // 结尾时透明度非常低，拖影最明显
+      ctx.fillStyle = `rgba(5, 5, 5, ${fadeFactor})`;
+      ctx.fillRect(0, 0, width, height);
+
+      // 1. 绘制连线
+      drawLines();
+
+      // 2. 绘制背景粒子 
+      bgParticles.forEach(p => {
+        p.update();
+        p.draw();
+      });
+
+      // 3. 绘制文字粒子 
+      if (particles.length > 0) {
+        particles = particles.filter(p => p.update());
+        particles.forEach(p => p.draw());
+      }
+
+      animationId = requestAnimationFrame(animate);
+    }
+
+    function nextSlide() {
+      if (isEnding) return;
+
+      if (currentIndex < content.length) {
+        createTextParticles(content[currentIndex]);
+        currentIndex++;
+        setTimeout(nextSlide, config.textDisplayTime);
+      } else {
+        triggerEnding();
+      }
+    }
+
+    function triggerEnding() {
+      isEnding = true;
+      // 重置背景粒子状态，使其更好地适应宇宙效果
+      bgParticles.forEach(p => {
+        p.reset();
+        // 额外赋予一个初始向外/向内的微弱速度，增强开场星云效果
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 0.5 + 0.1;
+        p.vx = Math.cos(angle) * speed;
+        p.vy = Math.sin(angle) * speed;
+      });
+    }
+
+    /**
+     * --- 事件监听 ---
+     */
+    window.addEventListener('resize', () => {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+      centerX = width / 2;
+      centerY = height / 2;
+
+      if (!isEnding && currentIndex > 0) {
+        createTextParticles(content[currentIndex - 1]);
+      }
+      bgParticles.forEach(p => p.reset());
+    });
+
+    window.addEventListener('mousemove', e => {
+      mouse.x = e.x;
+      mouse.y = e.y;
+    });
+    window.addEventListener('touchmove', e => {
+      e.preventDefault();
+      mouse.x = e.touches[0].clientX;
+      mouse.y = e.touches[0].clientY;
+    }, { passive: false });
+
+    window.addEventListener('touchend', () => { mouse.x = undefined; mouse.y = undefined; });
+    window.addEventListener('mouseleave', () => { mouse.x = undefined; mouse.y = undefined; });
+
+    // 点击开始按钮
+    startBtn.addEventListener('click', () => {
+      // 1. 播放音乐
+      bgm.play().catch(e => console.log("Audio play failed:", e));
+
+      // 2. 隐藏遮罩
+      overlay.style.opacity = '0';
+      setTimeout(() => {
+        overlay.style.display = 'none';
+      }, 1000);
+
+      // 3. 启动动画
+      init();
+      animate();
+      nextSlide();
+    });
+
+  </script>
+</body>
+
+</html>
